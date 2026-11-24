@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ploter</title>
+  <style>
+    :root {
+      --accent-hover: rgb(51, 102, 204);
+      --accent-color-darker: rgba(51, 102, 204, 0.599);
+      --accent-color: rgba(51, 102, 204, 0.46);
+
+      --surface: #fff;
+      --border: #888;
+      --text-muted: #666;
+      --text-hint: #444;
+
+      --upload-bg: rgba(51, 102, 204, 0.08);
+      --upload-bg-hover: rgba(51, 102, 204, 0.16);
+      --upload-bg-drag: rgba(51, 102, 204, 0.28);
+      --upload-border: rgba(51, 102, 204, 0.6);
+      --upload-border-hover: rgb(51, 102, 204);
+    }
+
+    [hidden]{
+      display:none !important;
+    }
+
+    #loading{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      min-height:80vh;
+      padding:16px;
+      font-size:20px;
+      text-align:center;
+      white-space:pre-wrap;
+      color:var(--text-muted);
+    }
+
+    canvas{
+      width:100%;
+      border:1px solid var(--border);
+      background:var(--surface);
+      margin-top:8px;
+      touch-action:none;
+      cursor:crosshair
+    }
+
+    .note{
+      font-size:12px;
+      color:var(--text-muted);
+      margin:4px 0
+    }
+
+    .file-upload-label{
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      gap:4px;
+      margin:0;
+      padding:28px 16px;
+      border:2px dashed var(--upload-border);
+      border-radius:10px;
+      background:var(--upload-bg);
+      text-align:center;
+      transition:background .15s, border-color .15s;
+    }
+
+    .file-upload-wrapper:hover .file-upload-label,
+    .file-upload-wrapper:focus-within .file-upload-label,
+    .file-upload-wrapper.dragover .file-upload-label{
+      background:var(--upload-bg-hover);
+      border-color:var(--upload-border-hover);
+      cursor: pointer;
+    }
+
+    .file-upload-input {
+      display: none;
+    }
+
+    .upload-hint{
+      font-size:13px;
+      color:var(--text-hint);
+    }
+
+    .row{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+    }
+
+    .row>div{
+      flex:1 1 140px;
+    }
+
+    #log{font-size:13px;white-space:pre-wrap}
+
+    .upload-preview{
+      max-width:100%;
+      max-height:180px;
+      object-fit:contain;
+      border-radius:8px;
+      margin-bottom:6px;
+    }
+
+    .file-upload-wrapper.has-file .file-upload-label::before{
+      display:none;
+    }
+
+    .submit-button{
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      padding:5px;
+    }
+
+    button{
+      padding:10px 16px;
+      margin:6px 6px 6px 0;
+      font-size:15px;
+      font-weight:600;
+      color:#fff;
+      background:var(--accent-hover);
+      border:2px solid transparent;
+      border-radius:10px;
+      cursor:pointer;
+    }
+
+    button:hover:not(:disabled){
+      background:var(--accent-color-darker);
+    }
+
+    button:active:not(:disabled){
+      background:var(--accent-color);
+    }
+
+    button:focus-visible{
+      outline:3px solid var(--accent-color);
+      outline-offset:2px;
+    }
+
+    button:disabled{
+      background:#c8ccd4;
+      color:#888;
+      cursor:not-allowed;
+    }
+
+    button.active{
+      background:#fff;
+      color:var(--accent-hover);
+      border-color:var(--accent-hover);
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+</head>
+<body>
+  <div id="loading"><span id="loading_text">Ładowanie Pythona...</span></div>
+
+  <div id="upload" hidden>
+    <div class="file-upload-wrapper">
+      <input type="file" id="file" class="file-upload-input" accept="image/*">
+      <label for="file" class="file-upload-label" id="drop_zone_label">
+        <img id="file_preview" class="upload-preview" alt="" hidden>
+        <span class="upload-title" id="file_label_title">Wybierz zdjęcie do druku</span>
+        <span class="upload-hint" id="file_label_hint">lub przeciągnij i upuść tutaj</span>
+      </label>
+    </div>
+    <div class="note" id="ble_note" hidden>Ta przeglądarka nie ma Web Bluetooth (użyj Chrome lub Edge).</div>
+  </div>
+
+  <div id="editor" hidden>
+    <label>Tryb</label>
+    <select id="mode">
+      <option value="photo">Zdjęcie (warstwice)</option>
+      <option value="lines">Rysunek (ciemne linie)</option>
+      <option value="contours">Obiekty (segmentacja jak w samolotach)</option>
+    </select>
+
+    <div class="row">
+      <div><label>Poziomy: <span id="lvV">4</span></label><input type="range" id="levels" min="2" max="8" value="4"></div>
+      <div><label>Wygładzenie: <span id="smV">0.25</span></label><input type="range" id="smooth" min="0.05" max="0.6" step="0.05" value="0.25"></div>
+      <div><label>Min. długość: <span id="mlV">50</span></label><input type="range" id="minlen" min="10" max="150" value="50"></div>
+    </div>
+
+    <div class="row">
+      <div><label>Uproszczenie: <span id="tlV">1</span></label><input type="range" id="tol" min="0.5" max="4" step="0.5" value="1"></div>
+      <div><label>Próg rysunku: <span id="thV">3</span></label><input type="range" id="thr" min="1" max="10" value="3"></div>
+      <div><label>Kreskowanie [px, 0 = wył.]: <span id="hgV">4</span></label><input type="range" id="hgap" min="0" max="10" value="4"></div>
+      <div><label>Zakres kreskowania [% najciemniejszych]: <span id="hdV">8</span></label><input type="range" id="hdark" min="2" max="30" value="8"></div>
+    </div>
+
+    <label><input type="checkbox" id="bg"> Usuń tło (GrabCut) - ramka wokół obiektu [% obrazu]</label>
+
+    <div class="row">
+      <div><label>Lewo: <span id="b0V">8</span></label><input type="range" id="bx0" min="0" max="90" value="8"></div>
+      <div><label>Góra: <span id="b1V">4</span></label><input type="range" id="by0" min="0" max="90" value="4"></div>
+      <div><label>Prawo: <span id="b2V">100</span></label><input type="range" id="bx1" min="10" max="100" value="100"></div>
+      <div><label>Dół: <span id="b3V">98</span></label><input type="range" id="by1" min="10" max="100" value="98"></div>
+    </div>
+
+    <div class="submit-button">
+      <button id="iSub">Potwierdź</button>
+    </div>
+
+    <canvas id="cv"></canvas>
+
+    <div id="log"></div>
+
+    <div>
+        <div>
+        <button id="tDel" class="active">Usuń linię</button>
+        <button id="tErase">Gumka</button>
+        <button id="tDraw">Rysuj</button>
+        <button id="bUndo">Cofnij</button>
+        <button id="bRedo">Ponów</button>
+        </div>
+    </div>
+
+    <label>Rozmiar gumki: <span id="erV">8</span></label><input type="range" id="er" min="2" max="40" value="8">
+    
+    <div class="row">
+      <div><label>Szerokość pola [mm]</label><input type="number" id="aw" value="100"></div>
+      <div><label>Wysokość pola [mm]</label><input type="number" id="ah" value="100"></div>
+      <div><label>Margines [mm]</label><input type="number" id="mg" value="5"></div>
+    </div>
+
+    <div>
+        <button id="bConn">Połącz ESP32</button>
+        <button id="bSend" disabled>Wyślij G-code</button>
+        <button id="bSave" disabled>Zapisz .gcode</button>
+
+        <div id="ble_status">Niepołączono</div>
+    </div>
+
+</div>
+
+  <script src="script.js"></script>
+</body>
+</html>
